@@ -10,16 +10,54 @@
 
 ---
 
-## Subprojects Overview
+## Project Overview: `rag-pdf-chromadb`
 
-### 1. [`springia-rag`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/springia-rag/pom.xml)
 Spring Boot 4.1.1 & Spring AI 2.0.1 application implementing an end-to-end Retrieval-Augmented Generation (RAG) system for PDF documents.
 
-- **Build Tool**: Maven Wrapper (`mvnw.cmd` on Windows, `./mvnw` on Unix)
+- **GitHub Repository**: [`rag-pdf-chromadb`](https://github.com/jhonduarte7/rag-pdf-chromadb)
+- **Build Tool**: Maven Wrapper (`mvnw.cmd` / `mvnw.ps1` on Windows, `./mvnw` on Unix)
 - **Java Standard**: Java 25 (LTS)
 - **Base Package**: `com.venefast.springboot.springiarag.app`
-- **Application Port**: `8085` (`server.port=8085` to prevent conflicts with Windows `AgentService` on `8080`)
+- **Application Port**: `8085` (`server.port=8085` to avoid conflicts with Windows `AgentService` on `8080`)
 - **Configuration Format**: `src/main/resources/application.properties` (Properties only, no YAML)
+
+---
+
+## High-Level Architecture Blueprint
+
+```mermaid
+flowchart TD
+    Client([HTTP REST Client / cURL / Postman])
+
+    subgraph ControllerLayer["1. Controller Layer"]
+        RC["RagController\n(/api/rag)"]
+    end
+
+    subgraph ServiceLayer["2. Service & Business Layer"]
+        RS["RagServiceImpl"]
+        Prompt["RAG_ASSISTANT_SYSTEM_PROMPT\n(Business Logic)"]
+        Splitter["TokenTextSplitter\n(Chunk Size: 800, Overlap: 350)"]
+        PDFReader["PagePdfDocumentReader\n(Apache PDFBox Engine)"]
+    end
+
+    subgraph InfrastructureLayer["3. Persistence & AI Infrastructure"]
+        Chroma[("ChromaDB Vector Store\n(Docker: chroma-db :8000)\nVolume: chroma-data")]
+        Ollama[("Ollama LLM :11434\nChat: qwen3:1.7b\nEmbeddings: nomic-embed-text")]
+        H2[("H2 Database\n(Document Metadata Audit)")]
+    end
+
+    Client -->|POST /api/rag/documents/upload| RC
+    Client -->|GET /api/rag/documents| RC
+    Client -->|POST /api/rag/chat| RC
+
+    RC --> RS
+    RS --> PDFReader
+    RS --> Splitter
+    RS -->|Embed & Store Chunks| Chroma
+    RS -->|Inference with Context| Ollama
+    RS -->|Audit Ingestion Records| H2
+    Prompt -.->|Injects Instructions| RS
+```
 
 ---
 
@@ -36,12 +74,12 @@ ChromaDB serves as the centralized vector database for storing PDF chunk embeddi
 - **Environment**: `IS_PERSISTENT=TRUE`, `PERSIST_DIRECTORY=/data`, `ANONYMIZED_TELEMETRY=FALSE`
 
 ### Where & How ChromaDB is Used in the Application
-1. **Application Configuration ([`application.properties`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/springia-rag/src/main/resources/application.properties))**:
+1. **Application Configuration ([`application.properties`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/src/main/resources/application.properties))**:
    - `spring.ai.vectorstore.chroma.client.host=http://localhost`
    - `spring.ai.vectorstore.chroma.client.port=8000`
    - `spring.ai.vectorstore.chroma.collection-name=springia_rag_collection`
    - `spring.ai.vectorstore.chroma.initialize-schema=true`
-2. **Service Layer ([`RagServiceImpl.java`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/springia-rag/src/main/java/com/venefast/springboot/springiarag/app/services/impl/RagServiceImpl.java))**:
+2. **Service Layer ([`RagServiceImpl.java`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/src/main/java/com/venefast/springboot/springiarag/app/services/impl/RagServiceImpl.java))**:
    - Injected as `org.springframework.ai.vectorstore.VectorStore`.
    - **Ingestion**: Calls `vectorStore.add(chunks)` to embed and store tokenized PDF fragments.
    - **RAG Retrieval**: Binds with `QuestionAnswerAdvisor.builder(vectorStore).build()` on `ChatClient` to supply retrieved context chunks to `qwen3:1.7b`.
@@ -63,9 +101,9 @@ docker run -d \
 ```
 
 #### Option B: Docker Compose Command
-From [`springia-rag/docker-compose.yml`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/springia-rag/docker-compose.yml):
+From [`docker-compose.yml`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/docker-compose.yml):
 ```bash
-docker compose -f springia-rag/docker-compose.yml up -d
+docker compose up -d
 ```
 
 #### Health Check & Status Verification
@@ -98,10 +136,21 @@ ollama pull nomic-embed-text
 ---
 
 ## Application Architecture & Layered Structure
-- **`controllers/`**: [`RagController`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/springia-rag/src/main/java/com/venefast/springboot/springiarag/app/controllers/RagController.java) exposing REST endpoints for PDF ingestion and document querying.
-- **`services/`**: [`RagService`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/springia-rag/src/main/java/com/venefast/springboot/springiarag/app/services/RagService.java) & [`RagServiceImpl`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/springia-rag/src/main/java/com/venefast/springboot/springiarag/app/services/impl/RagServiceImpl.java) encapsulating PDF processing, chunking, vector indexing in Chroma, business logic system prompt, and RAG retrieval.
-- **`repositories/`**: [`DocumentRecordRepository`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/springia-rag/src/main/java/com/venefast/springboot/springiarag/app/repositories/DocumentRecordRepository.java) extending Spring Data `JpaRepository`.
-- **`models/entities/`**: [`DocumentRecord`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/springia-rag/src/main/java/com/venefast/springboot/springiarag/app/models/entities/DocumentRecord.java) JPA entity tracking ingested files and chunk metrics.
-- **`models/dtos/`**: Immutable Java `record`s ([`ChatRequestDto`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/springia-rag/src/main/java/com/venefast/springboot/springiarag/app/models/dtos/ChatRequestDto.java), [`ChatResponseDto`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/springia-rag/src/main/java/com/venefast/springboot/springiarag/app/models/dtos/ChatResponseDto.java), [`DocumentRecordDto`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/springia-rag/src/main/java/com/venefast/springboot/springiarag/app/models/dtos/DocumentRecordDto.java)).
-- **`mappers/`**: [`DocumentRecordMapper`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/springia-rag/src/main/java/com/venefast/springboot/springiarag/app/mappers/DocumentRecordMapper.java) handling bidirectional conversion between entities and DTOs.
-- **`config/`**: [`RagConfig`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/springia-rag/src/main/java/com/venefast/springboot/springiarag/app/config/RagConfig.java) providing `ChatClient` and `TokenTextSplitter` infrastructure beans.
+- **`controllers/`**: [`RagController`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/src/main/java/com/venefast/springboot/springiarag/app/controllers/RagController.java) exposing REST endpoints for PDF ingestion and document querying.
+- **`services/`**: [`RagService`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/src/main/java/com/venefast/springboot/springiarag/app/services/RagService.java) & [`RagServiceImpl`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/src/main/java/com/venefast/springboot/springiarag/app/services/impl/RagServiceImpl.java) encapsulating PDF processing, chunking, vector indexing in Chroma, business logic system prompt, and RAG retrieval.
+- **`repositories/`**: [`DocumentRecordRepository`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/src/main/java/com/venefast/springboot/springiarag/app/repositories/DocumentRecordRepository.java) extending Spring Data `JpaRepository`.
+- **`models/entities/`**: [`DocumentRecord`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/src/main/java/com/venefast/springboot/springiarag/app/models/entities/DocumentRecord.java) JPA entity tracking ingested files and chunk metrics.
+- **`models/dtos/`**: Immutable Java `record`s ([`ChatRequestDto`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/src/main/java/com/venefast/springboot/springiarag/app/models/dtos/ChatRequestDto.java), [`ChatResponseDto`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/src/main/java/com/venefast/springboot/springiarag/app/models/dtos/ChatResponseDto.java), [`DocumentRecordDto`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/src/main/java/com/venefast/springboot/springiarag/app/models/dtos/DocumentRecordDto.java)).
+- **`mappers/`**: [`DocumentRecordMapper`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/src/main/java/com/venefast/springboot/springiarag/app/mappers/DocumentRecordMapper.java) handling bidirectional conversion between entities and DTOs.
+- **`config/`**: [`RagConfig`](file:///D:/IA/SPRING-BOOT/WORKSPACE/rag-pdf-chromadb/src/main/java/com/venefast/springboot/springiarag/app/config/RagConfig.java) providing `ChatClient` and `TokenTextSplitter` infrastructure beans.
+
+---
+
+## Core REST Endpoints (`/api/rag`)
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/rag/documents/upload` | Uploads and indexes a PDF document into ChromaDB |
+| `GET` | `/api/rag/documents` | Lists all previously ingested document audit records |
+| `POST` | `/api/rag/chat` | Asks semantic questions against indexed documents with source attribution |
+| `GET` | `/actuator/health` | Application healthcheck and readiness status |

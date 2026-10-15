@@ -3,9 +3,4 @@ param(
     [string[]]$Arguments
 )
 
-Push-Location "$PSScriptRoot\springia-rag"
-try {
-    & ".\mvnw.cmd" @Arguments
-} finally {
-    Pop-Location
-}
+& "$PSScriptRoot\mvnw.cmd" @Arguments

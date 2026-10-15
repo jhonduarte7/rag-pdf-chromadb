@@ -1,4 +1,4 @@
-# springia-rag
+# rag-pdf-chromadb
 
 Spring Boot (version 4.1.1 on Java 25) and Spring AI (version 2.0.1) application implementing an end-to-end **Retrieval-Augmented Generation (RAG)** pipeline for PDF documents, powered by:
 - **Ollama**:
@@ -10,7 +10,45 @@ Spring Boot (version 4.1.1 on Java 25) and Spring AI (version 2.0.1) application
 
 ---
 
-## 1. Prerequisites
+## 1. High-Level Architecture
+
+```mermaid
+flowchart TD
+    Client([HTTP REST Client / cURL / Postman])
+
+    subgraph ControllerLayer["1. Controller Layer"]
+        RC["RagController\n(/api/rag)"]
+    end
+
+    subgraph ServiceLayer["2. Service & Business Layer"]
+        RS["RagServiceImpl"]
+        Prompt["RAG_ASSISTANT_SYSTEM_PROMPT\n(Business Logic)"]
+        Splitter["TokenTextSplitter\n(Chunk Size: 800, Overlap: 350)"]
+        PDFReader["PagePdfDocumentReader\n(Apache PDFBox Engine)"]
+    end
+
+    subgraph InfrastructureLayer["3. Persistence & AI Infrastructure"]
+        Chroma[("ChromaDB Vector Store\n(Docker: chroma-db :8000)\nVolume: chroma-data")]
+        Ollama[("Ollama LLM :11434\nChat: qwen3:1.7b\nEmbeddings: nomic-embed-text")]
+        H2[("H2 Database\n(Document Metadata Audit)")]
+    end
+
+    Client -->|POST /api/rag/documents/upload| RC
+    Client -->|GET /api/rag/documents| RC
+    Client -->|POST /api/rag/chat| RC
+
+    RC --> RS
+    RS --> PDFReader
+    RS --> Splitter
+    RS -->|Embed & Store Chunks| Chroma
+    RS -->|Inference with Context| Ollama
+    RS -->|Audit Ingestion Records| H2
+    Prompt -.->|Injects Instructions| RS
+```
+
+---
+
+## 2. Prerequisites
 
 ### Ollama Models
 Ensure Ollama is running locally at `http://localhost:11434` and pull the configured models:
@@ -21,7 +59,7 @@ ollama pull nomic-embed-text
 ```
 
 ### Chroma Vector Store
-Start the Chroma DB service using Docker Compose from the `springia-rag/` root directory:
+Start the Chroma DB service using Docker Compose from the project root:
 
 ```bash
 docker compose up -d
@@ -31,25 +69,25 @@ Verify that the vector store is healthy and responding at `http://localhost:8000
 
 ---
 
-## 2. Running the Application
+## 3. Running the Application
 
 Use the included Maven Wrapper:
 
 ### Windows:
-```cmd
-mvnw.cmd -DskipTests spring-boot:run
+```powershell
+.\mvnw.cmd spring-boot:run
 ```
 
 ### Linux / macOS:
 ```bash
-./mvnw -DskipTests spring-boot:run
+./mvnw spring-boot:run
 ```
 
-The application will start on port `8085`.
+The application will start on port `8085` (`http://localhost:8085`).
 
 ---
 
-## 3. REST API Endpoints (`/api/rag`)
+## 4. REST API Endpoints (`/api/rag`)
 
 ### A. Upload and Index a PDF Document
 - **Endpoint:** `POST /api/rag/documents/upload`
@@ -123,14 +161,15 @@ curl -X POST http://localhost:8085/api/rag/chat \
 
 ---
 
-## 4. Project Structure
+## 5. Project Structure
 
 ```
-springia-rag/
+rag-pdf-chromadb/
 ├── docker-compose.yml                                  # Chroma DB container definition
 ├── pom.xml                                             # Maven build file (Boot 4.1.1, Spring AI 2.0.1)
 ├── AGENTS.md                                           # Agent governance & architecture specification
 ├── README.md                                           # English project setup & usage documentation
+├── mvnw.cmd / mvnw.ps1 / mvnw                          # Maven wrappers
 └── src/
     ├── main/
     │   ├── java/com/venefast/springboot/springiarag/app/
@@ -162,7 +201,7 @@ springia-rag/
 
 ---
 
-## 5. Configuration Reference (`application.properties`)
+## 6. Configuration Reference (`application.properties`)
 
 ```properties
 spring.application.name=springia-rag
