@@ -1,0 +1,6 @@
+# Workspace Ignored Files
+QUESTION.md
+*.log
+.system_generated/
+target/
+**/target/

@@ -1,0 +1,17 @@
+services:
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: chroma-db
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/data
+      - ANONYMIZED_TELEMETRY=FALSE
+    volumes:
+      - chroma-data:/data
+
+volumes:
+  chroma-data:
+    name: chroma-data
